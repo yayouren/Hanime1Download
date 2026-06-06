@@ -47,7 +47,7 @@
     }// ==UserScript==
 // @name         Hanime1 视频下载器
 // @namespace    https://github.com/akibaren
-// @version      2.0
+// @version      2.1
 // @description  在 hanime1.me 视频页中添加下载按钮，自动提取标题并下载MP4
 // @author       akibaren & 真寻
 // @match        https://hanime1.me/watch?v=*
@@ -242,7 +242,6 @@
             method: 'GET',
             url: url,
             responseType: 'blob',
-            timeout: 600000,
             headers: {
                 'Referer': 'https://hanime1.me/',
                 'Origin': 'https://hanime1.me'
@@ -319,10 +318,6 @@
             onerror: function (err) {
                 console.error('[Hanime1下载器] 请求错误:', JSON.stringify(err));
                 showError(btn, container, label, '网络请求失败（可能是跨域拦截或链接过期）', url, filename);
-            },
-            ontimeout: function () {
-                console.error('[Hanime1下载器] 请求超时');
-                showError(btn, container, label, '下载超时（>10分钟），链接可能已过期', url, filename);
             }
         });
     }
