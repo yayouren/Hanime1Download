@@ -12,7 +12,8 @@
             'MMD': '3D',
             '2D動畫': '2D',
             'Motion Anime': 'Motion Anime',
-            'AI生成': 'AI生成'
+            'AI生成': 'AI生成',
+            '裏番': '里番'
         };
 
         // 优先：从标题附近的容器中查找
@@ -47,7 +48,7 @@
     }// ==UserScript==
 // @name         Hanime1 视频下载器
 // @namespace    https://github.com/akibaren
-// @version      2.1
+// @version      2.2
 // @description  在 hanime1.me 视频页中添加下载按钮，自动提取标题并下载MP4
 // @author       akibaren & 真寻
 // @match        https://hanime1.me/watch?v=*
