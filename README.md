@@ -15,6 +15,7 @@
 | 2.5D / 3DCG / MMD | `Hanime/3D/作者名/标题.mp4` |
 | Motion Anime | `Hanime/Motion Anime/作者名/标题.mp4` |
 | AI生成 | `Hanime/AI生成/作者名/标题.mp4` |
+| 裏番 | `Hanime/里番/作者名/标题.mp4` |
 | 其他 | `Hanime/作者名/标题.mp4` |
 
 - 📊 实时进度条（百分比 + 网速 + 文件大小）
