@@ -27,7 +27,7 @@
 
 ### 多线程 vs 单线程
 
-v3.0 默认使用 4 线程分片下载。如果 CDN 对单连接限速，多线程能有效提速；但部分 CDN 可能限制并发连接数，多线程反而容易断链。
+v3.0 默认使用 4 线程分片下载。如果 CDN 对单连接限速，多线程能有效提速；但部分 CDN 对**单 IP 总速率**做限制，开再多线程也突破不了上限，反而容易触发并发限制导致断链。
 
 > 💡 **如果下载不稳定或速度无明显提升**，推荐使用 [v2 单线程版本](https://github.com/yayouren/Hanime1Download/raw/v2-single-thread/hanime1-video-downloader.user.js)，连接更稳定。
 
