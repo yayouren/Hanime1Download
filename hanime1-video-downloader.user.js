@@ -424,8 +424,7 @@
         newPath = newPath.replace(/[\\/:*?"<>|]/g, '_');
         newPath = newPath || 'Hanime';
         GM_setValue(ROOT_PATH_KEY, newPath);
-        alert('下载根目录已设为：' + newPath + '
-（保存在浏览器下载目录下）');
+        alert('下载根目录已设为：' + newPath + '\n（保存在浏览器下载目录下）');
     }
 
     if (typeof GM_registerMenuCommand === 'function') {
