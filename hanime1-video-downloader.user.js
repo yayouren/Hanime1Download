@@ -48,7 +48,7 @@
     }// ==UserScript==
 // @name         Hanime1 视频下载器
 // @namespace    https://github.com/akibaren
-// @version      2.2
+// @version      2.3
 // @description  在 hanime1.me 视频页中添加下载按钮，自动提取标题并下载MP4
 // @author       akibaren & 真寻
 // @match        https://hanime1.me/watch?v=*
@@ -222,8 +222,8 @@
     function downloadVideo(url, title, author, category, btn, progressUI) {
         const filename = title + '.mp4';
         const savePath = category
-            ? 'Hanime/' + category + '/' + author + '/' + filename
-            : 'Hanime/' + author + '/' + filename;
+            ? getRootPath() + '/' + category + '/' + author + '/' + filename
+            : getRootPath() + '/' + author + '/' + filename;
         const { container, label, barInner } = progressUI;
 
         // 锁定按钮 + 显示进度条
@@ -396,6 +396,32 @@
 
     if (typeof GM_registerMenuCommand === 'function') {
         GM_registerMenuCommand('⚙ 下载后自动关闭标签页', toggleAutoClose);
+    }
+
+    // ─── 下载根目录配置 ─────────────────────────
+
+    const ROOT_PATH_KEY = 'hm1_root_path';
+
+    function getRootPath() {
+        if (typeof GM_getValue === 'function') {
+            const custom = GM_getValue(ROOT_PATH_KEY, '');
+            return custom || 'Hanime';
+        }
+        return 'Hanime';
+    }
+
+    function setRootPath() {
+        if (typeof GM_setValue !== 'function') return;
+        const current = GM_getValue(ROOT_PATH_KEY, 'Hanime');
+        const input = prompt('请输入自定义下载根目录（留空恢复默认 Hanime）：', current);
+        if (input === null) return; // 取消
+        const newPath = input.trim().replace(/[\\/:*?"<>|]/g, '_') || 'Hanime';
+        GM_setValue(ROOT_PATH_KEY, newPath);
+        alert('下载根目录已设为：' + newPath);
+    }
+
+    if (typeof GM_registerMenuCommand === 'function') {
+        GM_registerMenuCommand('📁 设置下载根目录', setRootPath);
     }
 
     // 暴露给 downloadVideo 的回调
