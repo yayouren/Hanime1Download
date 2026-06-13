@@ -48,7 +48,7 @@
     }// ==UserScript==
 // @name         Hanime1 视频下载器
 // @namespace    https://github.com/akibaren
-// @version      2.3
+// @version      2.4
 // @description  在 hanime1.me 视频页中添加下载按钮，自动提取标题并下载MP4
 // @author       akibaren & 真寻
 // @match        https://hanime1.me/watch?v=*
@@ -413,11 +413,19 @@
     function setRootPath() {
         if (typeof GM_setValue !== 'function') return;
         const current = GM_getValue(ROOT_PATH_KEY, 'Hanime');
-        const input = prompt('请输入自定义下载根目录（留空恢复默认 Hanime）：', current);
+        const input = prompt('请输入下载根目录（相对于浏览器下载目录，如 Videos 或留空恢复 Hanime）：', current);
         if (input === null) return; // 取消
-        const newPath = input.trim().replace(/[\\/:*?"<>|]/g, '_') || 'Hanime';
+        let newPath = input.trim();
+        // 去掉 Windows 绝对路径的盘符（如 F:\视频 → 视频）
+        newPath = newPath.replace(/^[A-Za-z]:[\\\/]+/, '');
+        // 去掉开头的反斜杠
+        newPath = newPath.replace(/^[\\\/]+/, '');
+        // 清理非法字符
+        newPath = newPath.replace(/[\\/:*?"<>|]/g, '_');
+        newPath = newPath || 'Hanime';
         GM_setValue(ROOT_PATH_KEY, newPath);
-        alert('下载根目录已设为：' + newPath);
+        alert('下载根目录已设为：' + newPath + '
+（保存在浏览器下载目录下）');
     }
 
     if (typeof GM_registerMenuCommand === 'function') {
