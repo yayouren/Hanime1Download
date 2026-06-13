@@ -48,7 +48,7 @@
     }// ==UserScript==
 // @name         Hanime1 视频下载器
 // @namespace    https://github.com/akibaren
-// @version      2.4
+// @version      3.0
 // @description  在 hanime1.me 视频页中添加下载按钮，自动提取标题并下载MP4
 // @author       akibaren & 真寻
 // @match        https://hanime1.me/watch?v=*
@@ -225,6 +225,8 @@
             ? getRootPath() + '/' + category + '/' + author + '/' + filename
             : getRootPath() + '/' + author + '/' + filename;
         const { container, label, barInner } = progressUI;
+        const THREADS = 4; // 分片数
+        const MIN_CHUNK = 5 * 1048576; // 小于 5MB 不用多线程
 
         // 锁定按钮 + 显示进度条
         btn.textContent = '⏳ 0%';
@@ -234,93 +236,213 @@
         label.textContent = '正在连接...';
         barInner.style.width = '0%';
 
-        let lastLoaded = 0;
-        let lastTime = Date.now();
-
         console.log('[Hanime1下载器] 开始请求:', url);
 
+        const BASE_HEADERS = {
+            'Referer': 'https://hanime1.me/',
+            'Origin': 'https://hanime1.me'
+        };
+
+        // 步骤 1: 探测文件大小 & Range 支持
         GM_xmlhttpRequest({
             method: 'GET',
             url: url,
             responseType: 'blob',
-            headers: {
-                'Referer': 'https://hanime1.me/',
-                'Origin': 'https://hanime1.me'
-            },
-            onprogress: function (resp) {
-                if (resp.lengthComputable && resp.total > 0) {
-                    const pct = Math.round((resp.loaded / resp.total) * 100);
-                    barInner.style.width = pct + '%';
-                    btn.textContent = '⏳ ' + pct + '%';
+            headers: Object.assign({ 'Range': 'bytes=0-0' }, BASE_HEADERS),
+            onload: function (probeResp) {
+                const isRangeSupported = (probeResp.status === 206);
+                let totalSize = 0;
 
-                    const now = Date.now();
-                    const deltaTime = (now - lastTime) / 1000;
-                    const deltaBytes = resp.loaded - lastLoaded;
-                    const speed = deltaTime > 0 ? deltaBytes / deltaTime : 0;
-                    lastLoaded = resp.loaded;
-                    lastTime = now;
-
-                    const loadedMB = (resp.loaded / 1048576).toFixed(1);
-                    const totalMB = (resp.total / 1048576).toFixed(1);
-                    const speedMB = (speed / 1048576).toFixed(1);
-                    label.textContent = loadedMB + ' / ' + totalMB + ' MB  |  ' + speedMB + ' MB/s';
-                } else if (resp.loaded > 0) {
-                    const loadedMB = (resp.loaded / 1048576).toFixed(1);
-                    barInner.style.width = '50%';
-                    btn.textContent = '⏳ ' + loadedMB + 'MB';
-                    label.textContent = '已下载 ' + loadedMB + ' MB（总大小未知）';
+                if (isRangeSupported) {
+                    const cr = probeResp.responseHeaders;
+                    const match = cr.match(/content-range:\s*bytes\s+\d+-\d+\/(\d+)/i);
+                    if (match) totalSize = parseInt(match[1], 10);
                 }
-            },
-            onload: function (resp) {
-                console.log('[Hanime1下载器] 响应状态:', resp.status, '大小:', resp.response ? resp.response.size : 0);
-                if (resp.status >= 200 && resp.status < 400 && resp.response && resp.response.size > 0) {
-                    label.textContent = '正在保存文件...';
-                    barInner.style.width = '100%';
-                    btn.textContent = '💾 保存中...';
 
-                    const blob = resp.response;
-                    const blobUrl = URL.createObjectURL(blob);
-
-                    if (typeof GM_download === 'function') {
-                        // 使用 GM_download 保存到 Hanime/作者名/ 子文件夹
-                        GM_download({
-                            url: blobUrl,
-                            name: savePath,
-                            saveAs: false,
-                            onload: function () {
-                                console.log('[Hanime1下载器] GM_download 完成:', savePath);
-                                URL.revokeObjectURL(blobUrl);
-                            },
-                            onerror: function (e) {
-                                console.warn('[Hanime1下载器] GM_download 失败，降级为直接保存:', e);
-                                URL.revokeObjectURL(blobUrl);
-                                fallbackSave(blob, filename);
-                            }
-                        });
-                    } else {
-                        fallbackSave(blob, filename);
-                    }
-
-                    btn.textContent = '✅ 完成!';
-                    label.textContent = '已保存到 ' + savePath;
-                    window._hm1_tryCloseTab();
-                    // 保留完成状态，2 秒后变为"再次下载"
-                    setTimeout(() => {
-                        btn.textContent = '⬇ 再次下载';
-                        btn.style.pointerEvents = 'auto';
-                        btn.style.opacity = '1';
-                    }, 2000);
-                } else {
-                    const detail = '状态码 ' + resp.status + (resp.response ? ' 大小' + resp.response.size : ' 空响应');
-                    console.error('[Hanime1下载器] 异常响应:', detail);
-                    showError(btn, container, label, detail, url, filename);
+                if (!totalSize || !isRangeSupported || totalSize < MIN_CHUNK) {
+                    // 不支持 Range 或文件太小 → 单线程
+                    console.log('[Hanime1下载器] 单线程模式, totalSize:', totalSize);
+                    singleThreadDownload(url, totalSize);
+                    return;
                 }
+
+                console.log('[Hanime1下载器] 多线程模式, totalSize:', (totalSize / 1048576).toFixed(1), 'MB, threads:', THREADS);
+                multiThreadDownload(url, totalSize);
             },
-            onerror: function (err) {
-                console.error('[Hanime1下载器] 请求错误:', JSON.stringify(err));
-                showError(btn, container, label, '网络请求失败（可能是跨域拦截或链接过期）', url, filename);
+            onerror: function () {
+                singleThreadDownload(url, 0);
             }
         });
+
+        // ─── 单线程下载 ───────────────────────────
+        function singleThreadDownload(dlUrl, totalSize) {
+            let lastLoaded = 0, lastTime = Date.now();
+
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: dlUrl,
+                responseType: 'blob',
+                headers: BASE_HEADERS,
+                onprogress: function (resp) {
+                    updateProgress(resp.loaded, totalSize || resp.total, lastLoaded, lastTime, function (obj) {
+                        lastLoaded = obj.lastLoaded;
+                        lastTime = obj.lastTime;
+                    });
+                },
+                onload: function (resp) {
+                    if (resp.status >= 200 && resp.status < 400 && resp.response && resp.response.size > 0) {
+                        saveBlob(resp.response);
+                    } else {
+                        const detail = '状态码 ' + resp.status;
+                        console.error('[Hanime1下载器] 异常响应:', detail);
+                        showError(btn, container, label, detail, dlUrl, filename);
+                    }
+                },
+                onerror: function (err) {
+                    console.error('[Hanime1下载器] 请求错误:', JSON.stringify(err));
+                    showError(btn, container, label, '网络请求失败', dlUrl, filename);
+                }
+            });
+        }
+
+        // ─── 多线程分片下载 ───────────────────────
+        function multiThreadDownload(dlUrl, totalSize) {
+            const chunkSize = Math.ceil(totalSize / THREADS);
+            const chunks = new Array(THREADS).fill(null);
+            const loadedPerThread = new Array(THREADS).fill(0);
+            let completed = 0;
+            let lastSpeedTime = Date.now();
+            let lastSpeedBytes = 0;
+
+            for (let i = 0; i < THREADS; i++) {
+                const start = i * chunkSize;
+                const end = (i === THREADS - 1) ? totalSize - 1 : (i + 1) * chunkSize - 1;
+                const idx = i;
+
+                (function (threadIndex, rangeStart, rangeEnd) {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: dlUrl,
+                        responseType: 'blob',
+                        headers: Object.assign({
+                            'Range': 'bytes=' + rangeStart + '-' + rangeEnd
+                        }, BASE_HEADERS),
+                        onprogress: function (resp) {
+                            loadedPerThread[threadIndex] = resp.loaded;
+                            const totalLoaded = loadedPerThread.reduce(function (a, b) { return a + b; }, 0);
+                            const now = Date.now();
+                            const deltaTime = (now - lastSpeedTime) / 1000;
+                            const deltaBytes = totalLoaded - lastSpeedBytes;
+                            const speed = deltaTime > 0 ? deltaBytes / deltaTime : 0;
+                            if (deltaTime >= 0.5) {
+                                lastSpeedTime = now;
+                                lastSpeedBytes = totalLoaded;
+                            }
+                            const pct = Math.round((totalLoaded / totalSize) * 100);
+                            barInner.style.width = pct + '%';
+                            btn.textContent = '⏳ ' + pct + '%';
+                            const loadedMB = (totalLoaded / 1048576).toFixed(1);
+                            const totalMB = (totalSize / 1048576).toFixed(1);
+                            const speedMB = (speed / 1048576).toFixed(1);
+                            label.textContent = loadedMB + ' / ' + totalMB + ' MB  |  ' + speedMB + ' MB/s  [' + (completed + 1) + '/' + THREADS + ']';
+                        },
+                        onload: function (resp) {
+                            if (resp.status === 206 && resp.response) {
+                                chunks[threadIndex] = resp.response;
+                            }
+                            completed++;
+                            if (completed === THREADS) {
+                                // 所有分片完成，合并
+                                const validChunks = chunks.filter(function (c) { return c !== null; });
+                                if (validChunks.length === THREADS) {
+                                    label.textContent = '正在合并分片...';
+                                    btn.textContent = '🔗 合并中';
+                                    const merged = new Blob(validChunks, { type: 'video/mp4' });
+                                    saveBlob(merged);
+                                } else {
+                                    showError(btn, container, label, '部分分片下载失败 (' + validChunks.length + '/' + THREADS + ')', dlUrl, filename);
+                                }
+                            }
+                        },
+                        onerror: function () {
+                            completed++;
+                            loadedPerThread[threadIndex] = 0;
+                            if (completed === THREADS) {
+                                const validChunks = chunks.filter(function (c) { return c !== null; });
+                                if (validChunks.length > 0) {
+                                    const merged = new Blob(validChunks, { type: 'video/mp4' });
+                                    saveBlob(merged);
+                                } else {
+                                    showError(btn, container, label, '所有分片均下载失败', dlUrl, filename);
+                                }
+                            }
+                        }
+                    });
+                })(i, start, end);
+            }
+        }
+
+        // ─── 更新进度条 ───────────────────────────
+        function updateProgress(loaded, total, lastLoadedRef, lastTimeRef, updateFn) {
+            const useTotal = total || loaded;
+            if (useTotal > 0) {
+                const pct = Math.round((loaded / useTotal) * 100);
+                barInner.style.width = pct + '%';
+                btn.textContent = '⏳ ' + pct + '%';
+
+                const now = Date.now();
+                const deltaTime = (now - lastTimeRef) / 1000;
+                const deltaBytes = loaded - lastLoadedRef;
+                const speed = deltaTime > 0 ? deltaBytes / deltaTime : 0;
+                updateFn({ lastLoaded: loaded, lastTime: now });
+
+                const loadedMB = (loaded / 1048576).toFixed(1);
+                const totalMB = (useTotal / 1048576).toFixed(1);
+                const speedMB = (speed / 1048576).toFixed(1);
+                label.textContent = loadedMB + ' / ' + totalMB + ' MB  |  ' + speedMB + ' MB/s';
+            } else if (loaded > 0) {
+                const loadedMB = (loaded / 1048576).toFixed(1);
+                barInner.style.width = '50%';
+                btn.textContent = '⏳ ' + loadedMB + 'MB';
+                label.textContent = '已下载 ' + loadedMB + ' MB（总大小未知）';
+            }
+        }
+
+        // ─── 保存 Blob ────────────────────────────
+        function saveBlob(blob) {
+            label.textContent = '正在保存...';
+            barInner.style.width = '100%';
+            btn.textContent = '💾 保存中...';
+
+            const blobUrl = URL.createObjectURL(blob);
+            if (typeof GM_download === 'function') {
+                GM_download({
+                    url: blobUrl,
+                    name: savePath,
+                    saveAs: false,
+                    onload: function () {
+                        console.log('[Hanime1下载器] 完成:', savePath);
+                        URL.revokeObjectURL(blobUrl);
+                    },
+                    onerror: function (e) {
+                        console.warn('[Hanime1下载器] GM_download 失败:', e);
+                        URL.revokeObjectURL(blobUrl);
+                        fallbackSave(blob, filename);
+                    }
+                });
+            } else {
+                fallbackSave(blob, filename);
+            }
+
+            btn.textContent = '✅ 完成!';
+            label.textContent = '已保存到 ' + savePath;
+            window._hm1_tryCloseTab();
+            setTimeout(function () {
+                btn.textContent = '⬇ 再次下载';
+                btn.style.pointerEvents = 'auto';
+                btn.style.opacity = '1';
+            }, 2000);
+        }
     }
 
     function showError(btn, container, label, msg, fallbackUrl, filename) {
