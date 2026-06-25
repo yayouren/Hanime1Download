@@ -48,7 +48,7 @@
     }// ==UserScript==
 // @name         Hanime1 视频下载器
 // @namespace    https://github.com/akibaren
-// @version      3.0
+// @version      3.1
 // @description  在 hanime1.me 视频页中添加下载按钮，自动提取标题并下载MP4
 // @author       akibaren & 真寻
 // @match        https://hanime1.me/watch?v=*
@@ -423,6 +423,7 @@
                     onload: function () {
                         console.log('[Hanime1下载器] 完成:', savePath);
                         URL.revokeObjectURL(blobUrl);
+                        window._hm1_tryCloseTab();
                     },
                     onerror: function (e) {
                         console.warn('[Hanime1下载器] GM_download 失败:', e);
@@ -436,7 +437,6 @@
 
             btn.textContent = '✅ 完成!';
             label.textContent = '已保存到 ' + savePath;
-            window._hm1_tryCloseTab();
             setTimeout(function () {
                 btn.textContent = '⬇ 再次下载';
                 btn.style.pointerEvents = 'auto';
@@ -462,6 +462,12 @@
         a.click();
         document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+        // 降级保存也触发自动关闭
+        setTimeout(() => {
+            if (typeof isAutoCloseEnabled === 'function' && isAutoCloseEnabled()) {
+                window.close();
+            }
+        }, 3000);
     }
 
     // ─── 主流程 ───────────────────────────────────
